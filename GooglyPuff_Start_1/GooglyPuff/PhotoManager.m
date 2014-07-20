@@ -11,6 +11,7 @@
 
 @interface PhotoManager ()
 @property (nonatomic, strong) NSMutableArray *photosArray;
+@property (nonatomic, strong) dispatch_queue_t currentPhotoQuence;
 @end
 
 @implementation PhotoManager
@@ -18,11 +19,15 @@
 + (instancetype)sharedManager
 {
     static PhotoManager *sharedPhotoManager = nil;
-    if (!sharedPhotoManager) {
+    
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
         sharedPhotoManager = [[PhotoManager alloc] init];
+        NSLog(@"Singleton has memory address at: %@", sharedPhotoManager);
         sharedPhotoManager->_photosArray = [NSMutableArray array];
-    }
-
+        sharedPhotoManager.currentPhotoQuence = dispatch_queue_create("com.selander.GooglyPuff.photoQueue", DISPATCH_QUEUE_CONCURRENT);
+        
+    });
     return sharedPhotoManager;
 }
 
@@ -32,16 +37,23 @@
 
 - (NSArray *)photos
 {
-    return _photosArray;
+    __block NSArray * array;
+    dispatch_sync(self.currentPhotoQuence, ^{
+       array = [NSArray arrayWithArray:_photosArray];
+    });
+    return array;
 }
 
 - (void)addPhoto:(Photo *)photo
 {
     if (photo) {
-        [_photosArray addObject:photo];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self postContentAddedNotification];
+        dispatch_barrier_async(self.currentPhotoQuence, ^{
+            [_photosArray addObject:photo];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self postContentAddedNotification];
+            });
         });
+        
     }
 }
 
